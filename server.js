@@ -56,17 +56,36 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
-const GoogleStrategy = require('passport-google-oauth20').Strategy;
-
+// ÇİFT TANIMLAMA SATIRI BURADAN KALDIRILDI - SYNTAX ERROR ÇÖZÜLDÜ!
 passport.use(new GoogleStrategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    // İŞTE KRİTİK NOKTA BURASI: Tam adresi eksiksiz yazmalısın
     callbackURL: "https://parax.onrender.com/auth/google/callback" 
   },
-  function(accessToken, refreshToken, profile, cb) {
-    // Yapay zekanın yazdığı veritabanı kayıt kodları (buraya dokunmana gerek yok)
-    return cb(null, profile);
+  async function(accessToken, refreshToken, profile, cb) {
+    try {
+      // Kullanıcı veritabanında zaten var mı kontrol et
+      let { rows } = await pool.query('SELECT * FROM users WHERE google_id = $1', [profile.id]);
+      
+      // Eğer kullanıcı ilk defa geliyorsa veritabanına kaydet
+      if (rows.length === 0) {
+        const email = profile.emails && profile.emails[0] ? profile.emails[0].value : null;
+        const avatar_url = profile.photos && profile.photos[0] ? profile.photos[0].value : null;
+        
+        const insertRes = await pool.query(
+          `INSERT INTO users (google_id, name, email, avatar_url, balance) 
+           VALUES ($1, $2, $3, $4, $5) 
+           RETURNING *`,
+          [profile.id, profile.displayName, email, avatar_url, STARTING_BALANCE]
+        );
+        rows = insertRes.rows;
+      }
+      
+      return cb(null, rows[0]);
+    } catch (err) {
+      console.error('Google Auth Veritabanı Hatası:', err);
+      return cb(err);
+    }
   }
 ));
 
